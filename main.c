@@ -1,11 +1,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "threadpool.h"
 #include "list.h"
 
 #define USAGE "usage: ./sort [thread_count] [input_count]\n"
+#define DICT_FILE "./input.txt"
+#define LINE_SIZE 349900 
 
 struct {
     pthread_mutex_t mutex;
@@ -23,9 +26,12 @@ llist_t *merge_list(llist_t *a, llist_t *b)
     llist_t *_list = list_new();
     node_t *current = NULL;
     while (a->size && b->size) {
+        //llist_t *small = (llist_t *)
+        //                 ((intptr_t) a * (a->head->data <= b->head->data) +
+        //                  (intptr_t) b * (a->head->data > b->head->data));
         llist_t *small = (llist_t *)
-                         ((intptr_t) a * (a->head->data <= b->head->data) +
-                          (intptr_t) b * (a->head->data > b->head->data));
+                         ((intptr_t) a * (strcmp(a->head->data, b->head->data) <= 0) +
+                          (intptr_t) b * (strcmp(a->head->data, b->head->data) > 0));
         if (current) {
             current->next = small->head;
             current = current->next;
@@ -140,6 +146,19 @@ static void *task_run(void *data)
     pthread_exit(NULL);
 }
 
+static double diff_in_second(struct timespec t1, struct timespec t2)
+{
+    struct timespec diff;
+    if (t2.tv_nsec-t1.tv_nsec < 0) {
+        diff.tv_sec  = t2.tv_sec - t1.tv_sec - 1;
+        diff.tv_nsec = t2.tv_nsec - t1.tv_nsec + 1000000000;
+    } else {
+        diff.tv_sec  = t2.tv_sec - t1.tv_sec;
+        diff.tv_nsec = t2.tv_nsec - t1.tv_nsec;
+    }
+    return (diff.tv_sec + diff.tv_nsec / 1000000000.0);
+}
+
 int main(int argc, char const *argv[])
 {
     if (argc < 3) {
@@ -157,13 +176,41 @@ int main(int argc, char const *argv[])
     /* FIXME: remove all all occurrences of printf and scanf
      * in favor of automated test flow.
      */
-    printf("input unsorted data line-by-line\n");
-    for (int i = 0; i < data_count; ++i) {
-        long int data;
-        scanf("%ld", &data);
-        list_add(the_list, data);
+    
+    FILE *fp;
+    int i = 0, j = 0;
+    char line[MAX_LAST_NAME_SIZE];
+    char buffer[LINE_SIZE][MAX_LAST_NAME_SIZE];
+    
+    struct timespec start, end;
+    double cpu_time1;
+    
+    fp = fopen(DICT_FILE, "r");
+    if (!fp) {
+        printf("cannot open the file\n");
+        return -1;
     }
-
+    
+    clock_gettime(CLOCK_REALTIME, &start);
+      
+    while (fgets(line, sizeof(line), fp)) {
+        while (line[i] != '\0')
+            i++;
+        line[i - 1] = '\0';
+        i = 0;
+        strcpy(buffer[j],line);
+        j++;
+    }
+    
+    for (i = 0; i < data_count; ++i) {
+    	long int data;
+        scanf("%ld", &data);      
+        
+        printf("%s\n", buffer[data]);
+        
+        list_add(the_list, buffer[data]);
+    }
+      
     /* initialize tasks inside thread pool */
     pthread_mutex_init(&(data_context.mutex), NULL);
     data_context.cut_thread_count = 0;
@@ -176,6 +223,11 @@ int main(int argc, char const *argv[])
     _task->func = cut_func;
     _task->arg = the_list;
     tqueue_push(pool->queue, _task);
+    
+    clock_gettime(CLOCK_REALTIME, &end);
+    cpu_time1 = diff_in_second(start, end);
+    
+    printf("execution time of sort() : %lf sec\n", cpu_time1);
 
     /* release thread pool */
     tpool_free(pool);
