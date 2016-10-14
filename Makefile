@@ -18,7 +18,12 @@ deps := $(OBJS:%.o=.%.o.d)
 
 sort: $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $(OBJS) -rdynamic
-
+	
+run: sort
+	for i in `seq 1 8`; do \
+		echo `expr $$i \* $$$$ % 349900`; \
+	done | mutrace ./sort 4 8
+	
 clean:
 	rm -f $(OBJS) sort
 	@rm -rf $(deps)
